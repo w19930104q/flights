@@ -106,6 +106,106 @@ class QueryingTests(unittest.TestCase):
         self.assertEqual(query.params()["tfu"], "EgQIABABIgA")
         self.assertIn("&tfu=EgQIABABIgA", query.url())
 
+    def test_global_max_stops_only_fills_unset_legs(self) -> None:
+        query = create_query(
+            flights=[
+                FlightQuery(
+                    date="2099-01-02",
+                    from_airport="MSP",
+                    to_airport="SLC",
+                    max_stops=0,
+                ),
+                FlightQuery(
+                    date="2099-01-05",
+                    from_airport="SLC",
+                    to_airport="MSP",
+                ),
+            ],
+            trip="round-trip",
+            max_stops=2,
+        )
+
+        info = Info.FromString(query.to_bytes())
+        self.assertEqual(info.data[0].max_stops, 0)
+        self.assertEqual(info.data[1].max_stops, 2)
+
+        first, second = query.leg_constraints
+        self.assertEqual(first.max_stops, 0)
+        self.assertEqual(first.max_stops_source, "leg")
+        self.assertEqual(second.max_stops, 2)
+        self.assertEqual(second.max_stops_source, "global")
+
+    def test_explicit_max_stops_bytes_are_unchanged_without_global(self) -> None:
+        explicit = create_query(
+            flights=[
+                FlightQuery(
+                    date="2099-01-02",
+                    from_airport="MSP",
+                    to_airport="SLC",
+                    max_stops=1,
+                )
+            ]
+        )
+        # Passing the same value as the global fallback must not alter bytes.
+        same = create_query(
+            flights=[
+                FlightQuery(
+                    date="2099-01-02",
+                    from_airport="MSP",
+                    to_airport="SLC",
+                    max_stops=1,
+                )
+            ],
+            max_stops=1,
+        )
+        default = create_query(
+            flights=[
+                FlightQuery(
+                    date="2099-01-02",
+                    from_airport="MSP",
+                    to_airport="SLC",
+                )
+            ]
+        )
+
+        self.assertEqual(explicit.to_bytes(), same.to_bytes())
+        # With no max_stops anywhere, the protobuf field stays unset.
+        self.assertFalse(Info.FromString(default.to_bytes()).data[0].HasField("max_stops"))
+
+    def test_leg_constraints_snapshot_mirrors_every_filter(self) -> None:
+        query = create_query(
+            flights=[
+                FlightQuery(
+                    date="2099-01-02",
+                    from_airport="MSP",
+                    to_airport="SLC",
+                    airlines=["DL"],
+                    earliest_departure_hour=7,
+                    latest_arrival_hour=22,
+                    max_duration_minutes=600,
+                    connecting_airports=["DTW"],
+                    min_layover_minutes=45,
+                    max_layover_minutes=180,
+                    less_emissions_only=True,
+                )
+            ]
+        )
+
+        snapshot = query.leg_constraints[0]
+        self.assertEqual(snapshot.from_airport, "MSP")
+        self.assertEqual(snapshot.to_airport, "SLC")
+        self.assertEqual(snapshot.date, "2099-01-02")
+        self.assertEqual(snapshot.airlines, ["DL"])
+        self.assertEqual(snapshot.earliest_departure_hour, 7)
+        self.assertEqual(snapshot.latest_arrival_hour, 22)
+        self.assertEqual(snapshot.max_duration_minutes, 600)
+        self.assertEqual(snapshot.connecting_airports, ["DTW"])
+        self.assertEqual(snapshot.min_layover_minutes, 45)
+        self.assertEqual(snapshot.max_layover_minutes, 180)
+        self.assertTrue(snapshot.less_emissions_only)
+        self.assertIsNone(snapshot.max_stops)
+        self.assertIsNone(snapshot.max_stops_source)
+
 
 if __name__ == "__main__":
     unittest.main()

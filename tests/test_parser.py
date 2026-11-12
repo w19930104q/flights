@@ -45,6 +45,21 @@ class CapturedResponseTests(unittest.TestCase):
                     self.assertIsInstance(value.date, tuple)
                     self.assertEqual(len(value.date), 3)
 
+    def test_presence_flags_distinguish_missing_from_explicit_zero(self) -> None:
+        # Both itineraries in the fixture return complete time/date data.
+        for flight in self.flights:
+            for segment in flight.flights:
+                self.assertTrue(segment.departure.time_known)
+                self.assertTrue(segment.arrival.time_known)
+                self.assertTrue(segment.departure.date_known)
+                self.assertTrue(segment.arrival.date_known)
+                self.assertTrue(segment.duration_known)
+
+    def test_marketing_carrier_code_is_exposed_per_segment(self) -> None:
+        first = self.flights[0]
+        self.assertEqual([s.airline for s in first.flights], ["LJ", "LJ"])
+        self.assertEqual(self.flights[1].flights[0].airline, "TR")
+
 
 def parse_time(value) -> tuple[int, int]:
     """Parse a payload carrying a single segment with the given departure."""
@@ -77,3 +92,45 @@ class TimeEncodingTests(unittest.TestCase):
     def test_absent_value_is_treated_as_midnight(self) -> None:
         self.assertEqual(parse_time([]), (0, 0))
         self.assertEqual(parse_time(None), (0, 0))
+
+
+def parse_segment(raw_time, raw_date, raw_duration):
+    """Parse a one-segment payload with the given raw (possibly None) fields."""
+    segment = [None] * 23
+    segment[3], segment[4] = "AAA", "Origin"
+    segment[5], segment[6] = "Destination", "BBB"
+    segment[8], segment[10] = raw_time, [13, 5]
+    segment[11], segment[17] = raw_duration, "Test aircraft"
+    segment[20], segment[21] = raw_date, [2026, 10, 1]
+    segment[22] = ["ZZ", "42", None, "Test Airline"]
+
+    flight = [None] * 23
+    flight[0], flight[1], flight[2] = "nonstop", ["Test Airline"], [segment]
+    flight[22] = [None] * 7 + [250000, 230000]
+
+    payload = [None] * 8
+    payload[3] = [[[flight, [[None, 12000]]]]]
+    payload[7] = [None, [[], []]]
+    return parse_js(f"data:{json.dumps(payload)},ignored")[0].flights[0]
+
+
+class MissingFieldFlagTests(unittest.TestCase):
+    def test_missing_time_and_duration_are_flagged_but_keep_zero_values(self) -> None:
+        segment = parse_segment(None, None, None)
+
+        self.assertFalse(segment.departure.time_known)
+        self.assertFalse(segment.departure.date_known)
+        self.assertFalse(segment.duration_known)
+        # Legacy zero fallbacks remain in place.
+        self.assertEqual(segment.departure.time, (0, 0))
+        self.assertEqual(segment.duration, 0)
+        self.assertTrue(segment.arrival.time_known)
+        self.assertEqual(segment.airline, "ZZ")
+
+    def test_present_fields_are_flagged_known_including_zero(self) -> None:
+        segment = parse_segment([0, 0], [2026, 10, 1], 0)
+
+        self.assertTrue(segment.departure.time_known)
+        self.assertTrue(segment.departure.date_known)
+        self.assertTrue(segment.duration_known)
+        self.assertEqual(segment.duration, 0)

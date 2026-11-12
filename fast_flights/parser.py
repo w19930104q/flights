@@ -44,6 +44,12 @@ def _parse_time(value: list[int | None] | None) -> tuple[int, int]:
     return (padded[0] or 0, padded[1] or 0)
 
 
+def _parse_date(value: list[int] | None) -> tuple[int, int, int]:
+    """Expand a JS date triple, defaulting omitted components to zero."""
+    padded = [*(value or []), None, None, None]
+    return (padded[0] or 0, padded[1] or 0, padded[2] or 0)
+
+
 # Data discovery by @kftang, huge shout out!
 def parse_js(js: str):
     data = js.split("data:", 1)[1].rsplit(",", 1)[0]
@@ -89,17 +95,38 @@ def parse_js(js: str):
         for single_flight in flight[2]:
             from_airport = Airport(code=single_flight[3], name=single_flight[4])
             to_airport = Airport(code=single_flight[6], name=single_flight[5])
-            departure_time = _parse_time(single_flight[8])
-            departure_date = tuple(single_flight[20])
-            departure = SimpleDatetime(date=departure_date, time=departure_time)
 
-            arrival_time = _parse_time(single_flight[10])
-            arrival_date = tuple(single_flight[21])
-            arrival = SimpleDatetime(date=arrival_date, time=arrival_time)
+            departure_raw = single_flight[8]
+            departure_time = _parse_time(departure_raw)
+            departure_date_raw = single_flight[20]
+            departure_date = _parse_date(departure_date_raw)
+            departure = SimpleDatetime(
+                date=departure_date,
+                time=departure_time,
+                time_known=departure_raw is not None,
+                date_known=departure_date_raw is not None,
+            )
+
+            arrival_raw = single_flight[10]
+            arrival_time = _parse_time(arrival_raw)
+            arrival_date_raw = single_flight[21]
+            arrival_date = _parse_date(arrival_date_raw)
+            arrival = SimpleDatetime(
+                date=arrival_date,
+                time=arrival_time,
+                time_known=arrival_raw is not None,
+                date_known=arrival_date_raw is not None,
+            )
 
             plane_type = single_flight[17]
 
             duration = single_flight[11]
+
+            # Index 22 holds the segment's flight-number record
+            # ["DL", "472", null, "Delta Air Lines"]; its first element is
+            # the marketing carrier code. Older/trimmed payloads omit it.
+            flight_number = single_flight[22] if len(single_flight) > 22 else None
+            airline = flight_number[0] if flight_number else None
 
             sg_flights.append(
                 SingleFlight(
@@ -107,8 +134,10 @@ def parse_js(js: str):
                     to_airport=to_airport,
                     departure=departure,
                     arrival=arrival,
-                    duration=duration,
+                    duration=duration or 0,
                     plane_type=plane_type,
+                    duration_known=duration is not None,
+                    airline=airline,
                 )
             )
 

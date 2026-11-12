@@ -81,6 +81,20 @@ query = create_query(
 `max_price` uses the currency selected by `currency`. Baggage counts ask Google
 to include its estimated bag fees in displayed prices.
 
+The whole-search `max_stops` is a fallback: it is applied only to
+`FlightQuery` legs that leave `max_stops` unset, and never overwrites an
+explicit per-leg value. The resulting `Query.leg_constraints` snapshot keeps
+the effective value per leg together with its origin (`"leg"` or
+`"global"`), so itineraries can be audited against the rules that actually
+applied. See [Rule auditing]({{< ref "/docs/auditing" >}}).
+
+## Rule auditing
+
+`audit_itineraries(query, get_flights(query))` groups each itinerary's
+segments into the queried legs and reports every declared rule as
+`satisfied`, `violated`, or `unknown` — missing times or fields resolve to
+`unknown`, never to a pass. See [Rule auditing]({{< ref "/docs/auditing" >}}).
+
 ## Trip
 Either one of:
 

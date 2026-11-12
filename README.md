@@ -102,6 +102,42 @@ Hours use local airport time on a 0–23 clock. Duration and layover values use
 minutes, and `max_price` uses the selected `currency`. Google currently applies
 the first leg's airline filter to the whole search.
 
+The whole-search `max_stops` passed to `create_query` is a fallback: it only
+fills in legs whose own `max_stops` is unset and never overwrites an explicit
+per-leg value.
+
+## Auditing itinerary rules
+
+For multi-city procurement, `audit_itineraries()` re-groups each itinerary's
+flat segments into the query's legs and checks every declared rule, recording
+whether each rule was **satisfied**, **violated**, or **unknown**. Missing
+times, durations or airport codes resolve to `unknown` rather than passing.
+
+```python
+from fast_flights import audit_itineraries
+
+query = create_query(
+    flights=[
+        FlightQuery(date="2026-12-01", from_airport="TPE", to_airport="NRT", max_stops=0),
+        FlightQuery(date="2026-12-05", from_airport="NRT", to_airport="ICN", latest_arrival_hour=20),
+    ],
+    trip="multi-city",
+    max_stops=1,  # global fallback; leg 1 keeps its explicit 0
+)
+
+for audit in audit_itineraries(query, get_flights(query)):
+    print(audit.index, audit.price, audit.status, audit.complete)
+    for leg in audit.legs:
+        for rule in leg.rules:  # rule.rule, rule.status, rule.expected, rule.actual, rule.source
+            ...
+```
+
+Unpriced (`price is None`) and incomplete itineraries are returned alongside
+successful ones, in the parser's order; successful entries are never dropped
+or reordered. `Query.leg_constraints` records each effective constraint and
+whether `max_stops` came from the leg (`"leg"`) or the global fallback
+(`"global"`). See the [rule auditing docs](https://aweirddev.github.io/flights/docs/auditing/).
+
 ## Integrations
 If you'd like, you can use integrations.
 

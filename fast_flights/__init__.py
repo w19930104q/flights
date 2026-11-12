@@ -5,11 +5,19 @@ Docs: https://flights.aweird.me/
 """
 
 from . import integrations
+from .audit import audit_itineraries
 from .exceptions import FlightsNotFound
 from .fetcher import fetch_flights_html, get_flights
+from .model import (
+    ItineraryAudit,
+    LegAudit,
+    RuleResult,
+    RuleStatus,
+)
 from .parser import ResultList
 from .querying import (
     FlightQuery,
+    LegConstraints,
     Passengers,
     Query,
     create_query,
@@ -29,4 +37,10 @@ __all__ = [
     "integrations",
     "FlightsNotFound",
     "ResultList",
+    "audit_itineraries",
+    "ItineraryAudit",
+    "LegAudit",
+    "LegConstraints",
+    "RuleResult",
+    "RuleStatus",
 ]
